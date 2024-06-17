@@ -39,7 +39,7 @@ function init() {
 function enable() {
     log(`Enabling ${Me.metadata.name}`);
     panelButton = new St.Bin({ style_class: 'panel-button' });
-    panelButtonText = new St.Label({ text: 'Loading...', y_align: Clutter.ActorAlign.CENTER });
+    panelButtonText = new St.Label({ text: 'loading...', y_align: Clutter.ActorAlign.CENTER });
     panelButton.set_child(panelButtonText);
     Main.panel._centerBox.insert_child_at_index(panelButton, 0);
 
