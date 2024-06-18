@@ -1,8 +1,8 @@
 {
-  "uuid": "exchange-currency-extencion@guilhermelinosp",
+  "uuid": "exchangecurrency@guilhermelinosp.github.io",
   "name": "Exchange Currency",
-  "description": "Convert Dollar USD to Real BRL using API AWESOMEAPI https://docs.awesomeapi.com.br.",
+  "description": "",
   "version": 1.0,
-  "shell-version": ["40", "41", "42", "42", "43", "44", "45", "46"],
+  "shell-version": ["45", "46"],
   "url": "https://github.com/guilhermelinosp/exchange-currency-extencion"
 }

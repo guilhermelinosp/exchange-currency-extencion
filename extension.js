@@ -17,88 +17,106 @@
  */
 
 'use strict';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import Gio from 'gi://Gio';
+import GObject from 'gi://GObject';
+import St from 'gi://St';
+import GLib from 'gi://GLib';
+import Soup from 'gi://Soup';
 
-const { St, Gio, Clutter, Soup, GLib } = imports.gi;
-const ExtensionUtils = imports.misc.extensionUtils;
-const Me = ExtensionUtils.getCurrentExtension();
-const Main = imports.ui.main;
-const PanelMenu = imports.ui.panelMenu;
+const Indicator = GObject.registerClass(
+class Indicator extends PanelMenu.Button {
+    _init() {
+        super._init(0.0, `${Me.metadata.name} Indicator`, false);
+        this.add_child(new St.Icon({
+            icon_name: 'system-run-symbolic',
+            style_class: 'system-status-icon',
+        }));
+    }
+});
 
-let panelButton;
-let panelButtonText;
-let session;
-let dollarQuotation;
+const panelButton = new St.Bin({ style_class: "panel-button" });
+const panelButtonText = new St.Label();
+panelButton.set_child(panelButtonText);
+let dollarQuotation = 'N/A';
 let sourceId = null;
+let session = new Soup.SessionAsync();
 
-// Initialize the extension
 function init() {
-    log(`Initializing ${Me.metadata.name}`);
+    log(`initializing ${Me.metadata.name}`);
 }
 
-// Enable the extension
-function enable() {
-    log(`Enabling ${Me.metadata.name}`);
-    panelButton = new St.Bin({ style_class: 'panel-button' });
-    panelButtonText = new St.Label({ text: 'loading...', y_align: Clutter.ActorAlign.CENTER });
-    panelButton.set_child(panelButtonText);
+function createPanelButton() {
     Main.panel._centerBox.insert_child_at_index(panelButton, 0);
+}
 
-    // Set up the Soup session
-    session = new Soup.Session();
-
-    handle_request_dollar_api();
-
+function setUpdateTimer() {
     sourceId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 30, () => {
         handle_request_dollar_api();
         return GLib.SOURCE_CONTINUE;
     });
 }
 
-// Disable the extension
-function disable() {
-    log(`Disabling ${Me.metadata.name}`);
-    if (panelButton) {
-        Main.panel._centerBox.remove_child(panelButton);
-        panelButton.destroy();
-        panelButton = null;
-    }
+function enable() {
+    log(`enabling ${Me.metadata.name}`);
+    createPanelButton();
+    handle_request_dollar_api();
+    setUpdateTimer();
+}
 
+function disable() {
     if (sourceId) {
-        GLib.Source.remove(sourceId);
+        GLib.source_remove(sourceId);
         sourceId = null;
     }
+    panelButtonText.set_text('');
+    Main.panel._centerBox.remove_child(panelButton);
+    log(`disabling ${Me.metadata.name}`);
+}
 
-    if (session) {
-        session.abort();
-        session = null;
+export default class IndicatorExampleExtension extends Extension {
+    enable() {
+        this._indicator = new Indicator();
+        Main.panel.addToStatusArea(this.uuid, this._indicator);
+    }
+
+    disable() {
+        if (sourceId) {
+            GLib.source_remove(sourceId);
+            sourceId = null;
+        }
+        this._indicator.destroy();
+        this._indicator = null;
     }
 }
 
-// Handle Requests to API for Dollar Quotation
 async function handle_request_dollar_api() {
-    const url = 'https://economia.awesomeapi.com.br/last/USD-BRL';
-
     try {
-        let message = Soup.Message.new('GET', url);
-        let response = await new Promise((resolve, reject) => {
-            session.queue_message(message, (session, message) => {
-                if (message.status_code === Soup.Status.OK) {
-                    resolve(message.response_body.data);
-                } else {
-                    reject(new Error(`HTTP error: ${message.status_code}`));
-                }
+        let message = new Soup.Message({ method: 'GET', uri: new Soup.URI('https://economia.awesomeapi.com.br/last/USD-BRL') });
+
+        session.queue_message(message, (session, response) => {
+            if (response.status_code !== Soup.KnownStatusCode.OK) {
+                throw new Error(`HTTP error: ${response.status_code}`);
+            }
+
+            let jsonString = response.response_body.data.toString();
+            let data = JSON.parse(jsonString);
+            let bid = data.USDBRL.bid;
+
+            dollarQuotation = bid.split('.').join(',').substring(0, 6);
+
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                panelButtonText.set_text(`USD ${dollarQuotation}`);
+                return GLib.SOURCE_REMOVE;
             });
         });
-
-        const bodyResponse = JSON.parse(response);
-        let upDown = bodyResponse.USDBRL.varBid;
-        dollarQuotation = bodyResponse.USDBRL.bid.split('.');
-        dollarQuotation = `${dollarQuotation[0]},${dollarQuotation[1].substring(0, 2)}`;
-
-        let upDownIcon = parseFloat(upDown) > 0 ? '⬆' : '⬇';
-        panelButtonText.text = `USD ${dollarQuotation}) ${upDownIcon}`;
     } catch (error) {
-        log(`Error in [handle_request_dollar_api]: ${error}`);
-        panelButtonText.text = 'Error fetching data';
+        log(`Error in handle_request_dollar_api: ${error}`);
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            panelButtonText.set_text(`USD ${dollarQuotation}`);
+            return GLib.SOURCE_REMOVE;
+        });
     }
 }
